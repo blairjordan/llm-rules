@@ -15,6 +15,7 @@
 - Foreign keys follow pattern: `{singular_table_name}_id`
 - Implement `updated_at` triggers for timestamp management
 - Use JSONB for flexible/extensible data structures
+- Use existing object IDs as storage keys (e.g., plugin build `id` as the S3 key) to avoid redundant columns and minimize reconciliation efforts
 
 ### Permission Structure
 

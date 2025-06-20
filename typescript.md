@@ -2,207 +2,360 @@
 
 ## Overview & Philosophy
 
-- **No comments** - code should be self-documenting through descriptive naming
-- Only use comments for extremely obscure operations that cannot be clarified through better naming
-- Functional programming approach where practical with strong typing
+- **No comments**: code must be self-documenting through descriptive naming
+- Only use comments for extremely obscure operations that cannot be clarified through naming
+- Prefer a functional programming approach with strong typing
 - Clean separation of concerns between modules
-- Prefer functional composition over class inheritance
-- Error handling through structured logging and propagation to boundaries
+- Favor functional composition over class inheritance
+- Structured error handling, clear propagation to boundaries, and comprehensive logging
+
+### Abstraction Principles
+
+- **Avoid Leaky Abstractions** – abstractions fully encapsulate implementation details
+
+  ```typescript
+  // ✅ Good: Factory remains generic, specifics handled by consumer
+  const factory = (args, getMetadata) => ({
+    metadata: getMetadata(args),
+  })
+
+  // ❌ Bad: Factory knows about specific parameter handling
+  const factory = (args) => ({
+    metadata: args.pluginId ? { pluginId: args.pluginId } : {},
+  })
+  ```
+
+- **Single Responsibility** – each abstraction should serve a single clear purpose
+- **Dependency Injection** – dependencies explicitly passed, never hardcoded
+- **Interface Segregation** – minimal, focused interfaces
+- **Open/Closed Principle** – open to extension, closed to modification
 
 ## Structure & Organization
 
 ### Project Architecture
 
-- `src/service/` - Contains service-specific implementations
-- `src/lib/` - Shared utilities and core functionality
-- `src/types/` - TypeScript type definitions
-- Services are organized into focused, single-responsibility modules
-- Clear separation between service logic and infrastructure concerns
-- Files are highly focused, handling a single responsibility or domain concern
+- `src/service/` – Contains service-specific implementations
+- `src/lib/` – Shared utilities and core functionality
+- `src/types/` – TypeScript type definitions
+- Services are organized into single-responsibility modules
+- Clear separation between business logic and infrastructure concerns
+- Files handle a single responsibility or domain concern
+
+### Service Import Patterns
+
+- Use barrel files (`index.ts`) for cleaner imports
+- Import services through barrel files to reduce clutter
+
+  ```typescript
+  // ✅ Good
+  import { serviceA, serviceB } from "./service"
+
+  // ❌ Bad
+  import { createServiceA } from "./service/service-a"
+  import { createServiceB } from "./service/service-b"
+  ```
+
+- Barrel files contain only re-exports, no implementation:
+  ```typescript
+  // service/index.ts
+  export { createServiceA } from "./service-a.js"
+  export { createServiceB } from "./service-b.js"
+  ```
 
 ### Global Service Philosophy
 
-- Selective use of globally available services - only when truly needed across the application
-- Services are initialized at startup with proper dependency injection
-- Dependencies are passed explicitly to service constructors/factories rather than imported directly
-- Global instances are limited to core infrastructure services (logging, database, etc.)
-- Non-global services receive their dependencies as parameters
-- Service initialization follows a consistent pattern: factory functions that return initialized instances
-- Top-level init keeps startup clean, enables better testing and instrumentation
+- Limited use of globally available services, strictly for core infrastructure
+- Proper dependency injection, explicitly passed via constructors/factories
+- Service initialization via consistent factory pattern
+- Clear separation of initialization logic at application startup
 
 ## Naming Conventions
 
-- Self-explanatory function and variable names that make code reading intuitive
-- **Named Parameters**: Always use named parameters (object destructuring) for function calls with multiple arguments
-  - ✅ Good: `new SQSClient({ region: env.AWS_REGION })`
-  - ❌ Bad: `new SQSClient(env.AWS_REGION)`
-  - ✅ Good: `createService({ pool, s3Client, bucketName })`
-  - ❌ Bad: `createService(pool, s3Client, bucketName)`
-- Prefer arrow functions over "function" keyword
-- Consistent declaration of TypeScript interfaces and types for enhanced code clarity
+- Descriptive, self-explanatory function and variable names
+- Always use named parameters (object destructuring) for multiple arguments:
+
+  ```typescript
+  // ✅ Good
+  new SQSClient({ region: env.AWS_REGION })
+  createService({ pool, s3Client, bucketName })
+
+  // ❌ Bad
+  new SQSClient(env.AWS_REGION)
+  createService(pool, s3Client, bucketName)
+  ```
+
+- Prefer arrow functions over traditional `function` keyword
+- Consistent declaration and usage of TypeScript interfaces and types
 
 ## Core Patterns & Best Practices
 
 ### Code Style Fundamentals
 
 - Strong typing with TypeScript
-- Minimal use of classes, prefer plain functions and objects
-- Type guards to narrow and validate types at runtime
-- Factory pattern for creating service instances
-- Prioritize code clarity and structure over explanatory comments
+- Minimal use of classes; favor plain functions and objects
+- Use type guards for runtime type narrowing
+- Prioritize code clarity over explanatory comments
 
 ### Async Operations
 
-- Use async/await for all async operations
-- Avoid .then(), .catch(), and .finally() unless required by a library or for a specific pattern
+- Always use `async/await` syntax for asynchronous code
+- Avoid `.then()`, `.catch()`, `.finally()` unless explicitly required by external libraries or patterns
 
 ### Dependency Injection
 
-- Services receive their dependencies as parameters rather than importing them
-- Message/event handlers are passed into services rather than imported directly
-- This enables better testability, clearer service boundaries, and more flexible composition
+- Pass dependencies explicitly into services and handlers, never import them directly
+- Enhances testability, service boundaries, and composition flexibility
 
 ### Control Flow Patterns
 
+#### Map-Based Dispatch Over Switch Statements
+
+- Use `Map` for runtime dispatch when dealing with dynamic keys or complex handler functions:
+
+  ```typescript
+  // ✅ Good: Map-based dispatch for dynamic handlers
+  const getPreliminarySamplesFns = new Map([
+    ["location", locationFn],
+    ["deviceLocation", locationFn],
+    ["samples", samplesFn],
+    ["zones", zonesFn],
+    ["temperatures", temperaturesFn],
+  ])
+
+  const getPreliminarySamples =
+    getPreliminarySamplesFns.get(propertyName) || defaultFn
+  ```
+
+- Use for cleaner, more maintainable dispatch than large switch statements
+- Particularly effective when handlers are functions or when keys are dynamic
+
 #### Switch Expressions Over Nested If/Else
 
-- Prefer `switch` expressions wrapped in immediately invoked functions (IIFEs) over deeply nested `if/else` blocks when assigning values based on a condition
-
-```typescript
-const result = (() => {
-  switch (val) {
-    case "pdf":
-      return "Generating PDF..."
-    case "rtf":
-      return "Generating RTF..."
-    default:
-      return "Unknown format"
-  }
-})()
-```
-
-#### Runtime Dispatch Style
-
-- Avoid deeply nested `if/else` blocks with runtime type checks
-- Prefer a **declarative dispatch map** or pattern-match-like structure for runtime branching
-
-```typescript
-const fieldTypeHandlers: Record<string, (field: any) => void> = {
-  PDFTextField: (f) => {
-    ;(f as PDFTextField).setText(String(value))
-    filledCount++
-    logger.debug(`✅ Filled text field: ${fieldName} = ${value}`)
-  },
-  PDFCheckBox: (f) => {
-    if (value) {
-      ;(f as PDFCheckBox).check()
-      filledCount++
-      logger.debug(`✅ Checked field: ${fieldName}`)
+- Use `switch` expressions in immediately invoked function expressions (IIFE):
+  ```typescript
+  const result = (() => {
+    switch (val) {
+      case "pdf":
+        return "Generating PDF..."
+      case "rtf":
+        return "Generating RTF..."
+      default:
+        return "Unknown format"
     }
-  },
-}
-```
+  })()
+  ```
 
-#### Early Exit over Nested Branching
+#### Runtime Dispatch
 
-- Use early returns/guards to eliminate irrelevant branches as soon as possible
-- Avoid wrapping large blocks of logic inside nested if or else blocks
-
-```typescript
-// Prefer
-if (!user || !user.isAdmin) return
-// continue with relevant logic
-
-// Avoid
-if (user) {
-  if (user.isAdmin) {
-    // deeply nested logic
+- Use declarative dispatch maps instead of nested conditions:
+  ```typescript
+  const fieldTypeHandlers: Record<string, (field: any) => void> = {
+    PDFTextField: (f) => {
+      ;(f as PDFTextField).setText(String(value))
+      filledCount++
+      logger.debug(`✅ Filled text field: ${fieldName} = ${value}`)
+    },
+    PDFCheckBox: (f) => {
+      if (value) {
+        ;(f as PDFCheckBox).check()
+        filledCount++
+        logger.debug(`✅ Checked field: ${fieldName}`)
+      }
+    },
   }
-}
-```
+  ```
+
+#### Early Exit Over Nested Branching
+
+- Prefer early returns or guards to minimize nesting:
+
+  ```typescript
+  // ✅ Good
+  if (!user || !user.isAdmin) return
+
+  // ❌ Avoid
+  if (user) {
+    if (user.isAdmin) {
+      // deeply nested logic
+    }
+  }
+  ```
 
 #### Functional Iteration
 
-- Prefer functional iteration methods (`map`, `reduce`, `filter`, `forEach`) over traditional loops
+- Use functional array methods (`map`, `reduce`, `filter`, `forEach`) instead of traditional loops unless early exit or async iteration is required
 - Exceptions: async iteration (`for await...of`) or when early exit is needed
 
 #### Array Construction
 
-- Prefer `Array.from()` with mapping function over `Array().fill().map()` for creating sequences
+- Prefer `Array.from()` for sequence creation:
 
-```typescript
-// Prefer
-const results = Array.from({ length: count }, (_, i) =>
-  processItem(data.slice(i * 2, i * 2 + 2))
-)
+  ```typescript
+  // ✅ Good
+  const results = Array.from({ length: count }, (_, i) =>
+    processItem(data.slice(i * 2, i * 2 + 2))
+  )
 
-// Avoid
-const results = []
-for (let i = 0; i < count; i++) {
-  results.push(processItem(data.slice(i * 2, i * 2 + 2)))
-}
-```
+  // ❌ Bad
+  const results = []
+  for (let i = 0; i < count; i++) {
+    results.push(processItem(data.slice(i * 2, i * 2 + 2)))
+  }
+  ```
 
-## Error Handling & Quality
+### Type Safety & Runtime Patterns
+
+#### Type Guards for Runtime Safety
+
+- Use type guards to safely narrow types at runtime boundaries:
+
+  ```typescript
+  // ✅ Good: Explicit type guard
+  const isMPacket = (packet: KnownPacket): packet is MBPacket | MCPacket =>
+    Object.prototype.hasOwnProperty.call(packet, "tagNumber")
+
+  const isKnownPacket = (packet: Packet): packet is KnownPacket =>
+    !Object.prototype.hasOwnProperty.call(packet, "error")
+  ```
+
+- Essential when working with external data or union types
+- Provides compile-time safety with runtime checks
+
+#### Template Method Pattern with Function Parameters
+
+- Pass behavior as functions rather than using inheritance:
+  ```typescript
+  // ✅ Good: Function parameter for customization
+  const decodeBinaryFields = (buffer: Buffer, fields: PacketFields): any =>
+    Object.keys(fields).reduce((prev, curr) => {
+      const { indices, decodeFn } = fields[curr]
+      const [startIdx, endIdx] = indices
+      prev[curr] = decodeFn(buffer.slice(startIdx, endIdx))
+      return prev
+    }, {})
+  ```
+
+### Data Processing Patterns
+
+#### Buffer Manipulation with Functional Composition
+
+- Chain buffer operations for clear data transformation:
+  ```typescript
+  // ✅ Good: Clear buffer processing pipeline
+  const decodeSamples = (b: Buffer) =>
+    Array(Math.floor(b.length / 2))
+      .fill(0)
+      .reduce((prev, _, i) => {
+        const sample = b.slice(i * 2, i * 2 + 2)
+        prev.push(decodeSample(sample))
+        return prev
+      }, [])
+  ```
+
+#### Declarative Configuration Objects
+
+- Use configuration objects to drive behavior:
+  ```typescript
+  // ✅ Good: Declarative field definitions
+  const getMBPacketFields = (samplesLength: number): PacketFields => ({
+    WTSN: { indices: [0, 3], decodeFn: decodeWTSN },
+    interval: { indices: [3, 4], decodeFn: (b: Buffer) => b.readUInt8() },
+    first: { indices: [4, 10], decodeFn: decodeDate },
+    samples: { indices: [10, samplesLength], decodeFn: decodeSamples },
+  })
+  ```
+
+### Object Construction Patterns
+
+#### Fluent Interface for Configuration
+
+- Allow method chaining for builder-like patterns:
+
+  ```typescript
+  // ✅ Good: Fluent interface
+  healthChecker.monitorService(service, opts).serve(port)
+  ```
+
+- Use sparingly, only when the API benefits from sequential configuration
+
+#### Factory Pattern with Consistent Initialization
+
+- Use factory functions for complex object creation:
+  ```typescript
+  // ✅ Good: Factory with dependency injection
+  const createService = (opts: ServiceOpts): Service => {
+    const service = new Service(opts)
+    service.connect()
+    return service
+  }
+  ```
+
+### Event-Driven Patterns
+
+#### Resource Cleanup with Event Handlers
+
+- Proper resource management through event-driven cleanup:
+  ```typescript
+  // ✅ Good: Explicit cleanup handlers
+  server
+    .on("error", (error: any) => logger.warn("⚠️ Socket error", error))
+    .on("close", (error: any) =>
+      logger.log(error ? "error" : "info", "🚪 Socket closed", error)
+    )
+  ```
+
+## Error Handling & Logging
 
 ### Error Handling Strategy
 
-- Prefer error propagation to the nearest logical boundary
-- Only catch errors when:
-  1. Additional context can be added to the error
-  2. The error needs transformation at a boundary
-  3. The error occurs in an async context that won't be caught by boundary error handlers
-- Error handling should be done at service boundaries where the full context is available
-- Structured error objects with error codes for categorization
-- Strong validation at input boundaries to prevent downstream issues
+- Errors propagate to logical boundaries; catch errors only when:
+  - Additional context can be provided
+  - Error requires transformation at a boundary
+  - Async context demands explicit error handling
+- Structured errors with clear categorization
+- Validate strongly at input boundaries to prevent downstream errors
 
 ### Logging Guidelines
 
-#### Visual Organization
+- Visual organization via emoji prefixes
+- Structured logging: clear, human-readable messages plus context objects
+- Consistent log level usage: `info` for operational logs, `error` for failures
+- Log at system/module boundaries only, not inside pure/internal functions:
 
-- Visual organization through emoji prefixes for different operations
-- Structured contextual logging with clear message and separate context object
-- Consistent log level usage (info for operations, error for failures)
-- Log messages should be human-readable with context as machine-parseable object
+  ```typescript
+  // ✅ Good: logs at boundaries
+  const fileProcessor = initFileProcessor(s3Client)
+  logger.info("📄 File processor initialized")
 
-#### Logging at Boundaries, Not Internals
+  // ❌ Bad: logs inside internals
+  function initFileProcessor(s3Client) {
+    logger.info("📄 File processor initialized") // Avoid internal logging
+    return { ... }
+  }
+  ```
 
-- **Log at system or module boundaries** — not inside pure or narrowly scoped internal functions
-- Internal functions should remain clean and focused on their logic without logging
-- Logging should capture observable system behavior, not implementation details
+## Data Processing
 
-```typescript
-// Good: logs at the boundary where effects happen
-const fileProcessor = initFileProcessor(s3Client)
-logger.info("📄 File processor initialized")
-
-// Avoid: internal logging that clutters logic
-function initFileProcessor(s3Client) {
-  logger.info("📄 File processor initialized"); // ❌ Don't log here
-  return { ... };
-}
-```
-
-### Data Processing
-
-- Pipeline architecture for processing flows
-- Clear separation between data acquisition, transformation, and storage
-- Strong validation at input/output boundaries
+- Pipeline architecture: clear separation of data acquisition, transformation, and storage
 - Pure functions for transformation logic
-- Side effects isolated to specific boundary functions
-- Event-driven processing with clear state transitions
+- Side effects isolated to boundary functions
+- Event-driven processing with explicit state transitions
 
-### Testing
+## Testing
 
-- Unit tests focused on core business logic
-- Clear separation of test setup from assertions
-- Extensive use of test helpers and fixtures
-- Consistent test organization
-- Mock external dependencies at boundaries
+- Unit tests emphasize core business logic
+- Separate test setup clearly from assertions
+- Extensive test helpers and fixtures
+- Mock external dependencies at service boundaries
 
 ## Maintenance Notes
 
-- This file should be kept up-to-date as the project structure evolves
-- Any significant changes to project architecture, dependencies, or infrastructure should be documented here
-- When making changes, ensure to update this file to reflect the current state of the project
-- Once a set of changes are made, return any manually required tasks as a TODO list (such as adding .env values)
+- Keep this file updated as project structure evolves
+- Document any significant changes to architecture, dependencies, or infrastructure
+- Ensure updates are accurately reflected here after any changes
+- Clearly list manual follow-up tasks (e.g., updating `.env` values) as TODO items
+
+## IMPORTANT
+
+- For general code responses, explicitly state:
+  "🐒 Abiding by coding laws"
